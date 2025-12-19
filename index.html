@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MP22</title>
+
+  <style>
+    :root{
+      --bg:#000000;
+      --btn:#40E0D0;
+      --txt:#000000;
+      --hint:#aaaaaa;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .btn {
+      width: clamp(70px, 18vw, 120px);   /* ~3 cm en móvil */
+      height: clamp(70px, 18vw, 120px);
+      border-radius: 50%;
+      border: none;
+      background: var(--btn);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 0 6px rgba(64,224,208,0.18);
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.05s ease, filter 0.05s ease;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+      filter: brightness(0.95);
+    }
+
+    .label {
+      color: var(--txt);
+      font-weight: 600;
+      font-size: clamp(14px, 4vw, 22px);
+      letter-spacing: 0.06em;
+      user-select: none;
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 18px;
+      width: 100%;
+      text-align: center;
+      font-size: 13px;
+      color: var(--hint);
+    }
+  </style>
+</head>
+
+<body>
+
+  <button class="btn" id="btn" aria-label="MP22">
+    <span class="label">MP22</span>
+  </button>
+
+  <div class="hint" id="hint">Listo</div>
+
+  <script>
+    /* ================= CONFIG ================= */
+
+    // URL del Cloudflare Worker (la pondremos cuando lo tengas)
+    const WORKER_URL = "https://TU_WORKER_AQUI/pulse";
+
+    // Token secreto en la URL:
+    // https://tuusuario.github.io/timbre/?t=TOKEN_LARGO
+    const token = new URLSearchParams(location.search).get("t");
+
+    /* ========================================= */
+
+    const btn  = document.getElementById("btn");
+    const hint = document.getElementById("hint");
+
+    function setHint(txt){
+      hint.textContent = txt;
+    }
+
+    btn.addEventListener("click", async () => {
+
+      if (!token) {
+        setHint("Falta token");
+        return;
+      }
+
+      btn.disabled = true;
+      setHint("Enviando…");
+
+      try {
+        const r = await fetch(WORKER_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            token: token,
+            cmd: "PULSE"
+          })
+        });
+
+        if (!r.ok) throw new Error("HTTP " + r.status);
+
+        setHint("OK");
+      } catch (e) {
+        setHint("Error");
+      } finally {
+        setTimeout(() => setHint("Listo"), 1200);
+        btn.disabled = false;
+      }
+    });
+  </script>
+
+</body>
+</html>
