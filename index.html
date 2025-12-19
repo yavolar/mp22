@@ -150,12 +150,12 @@
       setHint("Enviando…");
 
       try {
-        const r = await fetch(WORKER_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify({ token: token, cmd: "PULSE" })
-        });
+      const url = `${WORKER_URL}?token=${encodeURIComponent(token)}`;
+      
+      const r = await fetch(url, {
+        method: "GET",
+        cache: "no-store"
+      });;
 
         if (!r.ok) throw new Error("HTTP " + r.status);
 
