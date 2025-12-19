@@ -67,7 +67,7 @@
   const WORKER_BASE = "https://restless-surf-375f.ltudela.workers.dev/pulse";
 
   // Clave local
-  const TOKEN_KEY = "F7cQmKZ8pA2sD4EwN0LxJb6T1R9aV5H_UYdCGrMBeq";
+  const TOKEN_KEY = "MP22_TOKEN";
 
   /* ========================================= */
 
@@ -87,7 +87,9 @@
   }
 
   function getQsToken() {
-    return new URLSearchParams(location.search).get("t");
+    const MIN_LEN = 30; // acepta solo tokens "reales"
+    const raw = new URLSearchParams(location.search).get("t");
+    return (raw && raw.length >= MIN_LEN) ? raw : null;
   }
 
   function getSavedToken() {
