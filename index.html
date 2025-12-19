@@ -4,197 +4,120 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>MP22</title>
-  <link rel="manifest" href="./manifest.json">    
+
+  <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#000000" />
 
   <style>
-    :root { --bg:#000; --fg:#ddd; --mut:#9aa; --btn:#40E0D0; --txt:#000; --warn:#ffcc66; --err:#ff6b6b; }
-    body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg); font-family:system-ui,Arial,sans-serif; }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 18px; }
-    .row { display:flex; gap:12px; flex-wrap:wrap; }
-    .card { border:1px solid #222; border-radius:14px; padding:14px; background:#0b0b0b; }
-    .card h2 { margin:0 0 10px 0; font-size:16px; color:var(--mut); font-weight:600; }
-    .kv { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; line-height:1.45; }
-    .kv b { color:#fff; font-weight:600; }
-    .big { width:220px; height:220px; border-radius:50%; border:0; background:var(--btn); color:var(--txt);
-           display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:700;
-           box-shadow:0 0 0 6px rgba(64,224,208,0.18); cursor:pointer; user-select:none; }
-    .big:active { transform: scale(0.96); }
-    button.small { padding:10px 12px; border-radius:10px; border:1px solid #333; background:#151515; color:#ddd; cursor:pointer; }
-    button.small:active { transform: scale(0.99); }
-    .hint { margin-top: 10px; font-size: 13px; color: var(--mut); min-height: 1.3em; }
-    .ok { color:#7CFC98; }
-    .warn { color: var(--warn); }
-    .err { color: var(--err); }
-    .sp { height:12px; }
+    :root{
+      --bg:#000000;
+      --btn:#40E0D0;
+      --txt:#000000;
+      --hint:#aaaaaa;
+    }
+    html, body { height:100%; margin:0; }
+    body{
+      background:var(--bg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    }
+    .wrap{ text-align:center; }
+    .btn{
+      width:220px; height:220px;
+      border-radius:50%;
+      border:none;
+      background:var(--btn);
+      cursor:pointer;
+      box-shadow:0 0 0 6px rgba(64,224,208,0.18);
+      -webkit-tap-highlight-color:transparent;
+      transition:transform .05s ease, filter .05s ease;
+    }
+    .btn:active{ transform:scale(0.96); filter:brightness(0.95); }
+    .label{
+      color:var(--txt);
+      font-weight:700;
+      font-size:30px;
+      letter-spacing:.06em;
+      user-select:none;
+    }
+    .hint{
+      margin-top:14px;
+      font-size:13px;
+      color:var(--hint);
+      user-select:none;
+      min-height:1.2em;
+    }
   </style>
 </head>
 
 <body>
   <div class="wrap">
-
-    <div class="row" style="align-items:center; justify-content:space-between;">
-      <button class="big" id="btnPulse">MP22</button>
-
-      <div class="card" style="flex:1; min-width: 320px;">
-        <h2>Estado (diagnóstico)</h2>
-        <div class="kv" id="diag"></div>
-        <div class="hint" id="hint">Listo</div>
-      </div>
-    </div>
-
-    <div class="sp"></div>
-
-    <div class="card">
-      <h2>Acciones</h2>
-      <div class="row">
-        <button class="small" id="btnRefresh">Refrescar estado</button>
-        <button class="small" id="btnSaveFromUrl">Guardar token desde URL (?t=)</button>
-        <button class="small" id="btnClearToken">Borrar token (localStorage)</button>
-        <button class="small" id="btnClearCaches">Limpiar CacheStorage</button>
-        <button class="small" id="btnUnregSW">Desregistrar Service Workers</button>
-      </div>
-      <div class="hint">
-        Nota: “Limpiar CacheStorage” y “Desregistrar SW” limpia la caché de la PWA de este sitio sin tocar contraseñas ni otras webs.
-      </div>
-    </div>
-
+    <button class="btn" id="btn" aria-label="MP22"><span class="label">MP22</span></button>
+    <div class="hint" id="hint">Listo</div>
   </div>
 
-<script>
-  /* ================= CONFIG ================= */
+  <script>
+    /* ================= CONFIG ================= */
+    const WORKER_BASE = "https://restless-surf-375f.ltudela.workers.dev/pulse";
+    const TOKEN_KEY   = "MP22_TOKEN";
+    const MIN_LEN     = 30;     // ignora ?t= cortos (bug típico en PWA Android)
+    const VIBRATE_MS  = [80, 40, 80]; // patrón de vibración al OK
+    /* ========================================= */
 
-  // Tu Worker (base) sin query
-  const WORKER_BASE = "https://restless-surf-375f.ltudela.workers.dev/pulse";
+    const btn  = document.getElementById("btn");
+    const hint = document.getElementById("hint");
 
-  // Clave local
-  const TOKEN_KEY = "MP22_TOKEN";
+    function setHint(t){ hint.textContent = t; }
 
-  /* ========================================= */
-
-  const elDiag = document.getElementById("diag");
-  const elHint = document.getElementById("hint");
-
-  function setHint(txt, cls="") {
-    elHint.className = "hint " + cls;
-    elHint.textContent = txt;
-  }
-
-  function fingerprint(tok) {
-    if (!tok) return "—";
-    const a = tok.slice(0,4);
-    const b = tok.slice(-4);
-    return `${a}…${b} (len=${tok.length})`;
-  }
-
-  function getQsToken() {
-    const MIN_LEN = 30; // acepta solo tokens "reales"
-    const raw = new URLSearchParams(location.search).get("t");
-    return (raw && raw.length >= MIN_LEN) ? raw : null;
-  }
-
-  function getSavedToken() {
-    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
-  }
-
-  function setSavedToken(tok) {
-    try { localStorage.setItem(TOKEN_KEY, tok); return true; } catch { return false; }
-  }
-
-  function clearSavedToken() {
-    try { localStorage.removeItem(TOKEN_KEY); return true; } catch { return false; }
-  }
-
-  function effectiveToken() {
-    const qs = getQsToken();
-    const saved = getSavedToken();
-    return qs || saved || null;
-  }
-
-  function renderDiag() {
-    const qs = getQsToken();
-    const saved = getSavedToken();
-    const eff = effectiveToken();
-
-    elDiag.innerHTML = [
-      `<b>href</b>: ${escapeHtml(location.href)}`,
-      `<b>search</b>: ${escapeHtml(location.search || "—")}`,
-      `<b>t (URL)</b>: ${escapeHtml(qs ? fingerprint(qs) : "—")}`,
-      `<b>saved (localStorage)</b>: ${escapeHtml(saved ? fingerprint(saved) : "—")}`,
-      `<b>effective</b>: ${escapeHtml(eff ? fingerprint(eff) : "—")}`,
-      `<b>worker</b>: ${escapeHtml(WORKER_BASE)}`
-    ].join("<br>");
-
-    if (!eff) setHint("Falta token (ni en URL ?t= ni en localStorage)", "warn");
-    else setHint("Token cargado: " + fingerprint(eff), "ok");
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  // --- Botón principal: PULSE por GET ---
-  document.getElementById("btnPulse").addEventListener("click", async () => {
-    const tok = effectiveToken();
-    if (!tok) { setHint("No hay token: abre la web con ?t=TU_TOKEN y pulsa 'Guardar token'", "warn"); return; }
-
-    const url = `${WORKER_BASE}?token=${encodeURIComponent(tok)}&ts=${Date.now()}`; // ts evita caché
-    setHint("Enviando…", "");
-
-    try {
-      const r = await fetch(url, { method: "GET", cache: "no-store" });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      setHint("OK (PULSE enviado)", "ok");
-    } catch (e) {
-      setHint(String(e?.message || e), "err");
+    function getQsToken(){
+      const raw = new URLSearchParams(location.search).get("t");
+      return (raw && raw.length >= MIN_LEN) ? raw : null;
     }
-  });
-
-  // --- Refrescar ---
-  document.getElementById("btnRefresh").addEventListener("click", () => renderDiag());
-
-  // --- Guardar token desde URL ---
-  document.getElementById("btnSaveFromUrl").addEventListener("click", () => {
-    const qs = getQsToken();
-    if (!qs) { setHint("No hay ?t= en la URL", "warn"); return; }
-    const ok = setSavedToken(qs);
-    setHint(ok ? "Token guardado en localStorage" : "No se pudo guardar (localStorage bloqueado)", ok ? "ok" : "err");
-    renderDiag();
-  });
-
-  // --- Borrar token ---
-  document.getElementById("btnClearToken").addEventListener("click", () => {
-    const ok = clearSavedToken();
-    setHint(ok ? "Token borrado (localStorage)" : "No se pudo borrar token", ok ? "ok" : "err");
-    renderDiag();
-  });
-
-  // --- Limpiar CacheStorage (PWA caché) ---
-  document.getElementById("btnClearCaches").addEventListener("click", async () => {
-    if (!("caches" in window)) { setHint("CacheStorage no soportado aquí", "warn"); return; }
-    try {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-      setHint("CacheStorage limpiado", "ok");
-    } catch (e) {
-      setHint("Error limpiando CacheStorage: " + (e?.message || e), "err");
+    function getSavedToken(){
+      try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
     }
-  });
-
-  // --- Desregistrar Service Workers ---
-  document.getElementById("btnUnregSW").addEventListener("click", async () => {
-    if (!("serviceWorker" in navigator)) { setHint("No hay serviceWorker en este navegador", "warn"); return; }
-    try {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-      setHint("Service Workers desregistrados", "ok");
-    } catch (e) {
-      setHint("Error desregistrando SW: " + (e?.message || e), "err");
+    function setSavedToken(tok){
+      try { localStorage.setItem(TOKEN_KEY, tok); return true; } catch { return false; }
     }
-  });
 
-  // Render inicial
-  renderDiag();
-</script>
+    // Captura token válido desde la URL y lo persiste
+    const qsToken = getQsToken();
+    if (qsToken) setSavedToken(qsToken);
+
+    function effectiveToken(){
+      return getQsToken() || getSavedToken();
+    }
+
+    // SW (para instalación PWA estable)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(()=>{});
+    }
+
+    btn.addEventListener("click", async () => {
+      const token = effectiveToken();
+      if (!token) { setHint("Falta token"); return; }
+
+      btn.disabled = true;
+      setHint("Enviando…");
+
+      try {
+        const url = `${WORKER_BASE}?token=${encodeURIComponent(token)}&ts=${Date.now()}`;
+        const r = await fetch(url, { method: "GET", cache: "no-store" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+
+        // Vibración (si el dispositivo lo permite)
+        if (navigator.vibrate) navigator.vibrate(VIBRATE_MS);
+
+        setHint("OK");
+      } catch (e) {
+        setHint(e?.message || String(e));
+      } finally {
+        setTimeout(() => setHint("Listo"), 1200);
+        btn.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
