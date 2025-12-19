@@ -7,14 +7,13 @@
 
   <link rel="manifest" href="./manifest.json">
 
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
 
-<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#000000">
-
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
 
   <style>
     :root{
@@ -40,8 +39,6 @@
     .btn {
       width: clamp(200px, 30vw, 240px);
       height: clamp(200px, 30vw, 240px);
-
-
       border-radius: 50%;
       border: none;
       background: var(--btn);
@@ -74,6 +71,7 @@
       text-align: center;
       font-size: 13px;
       color: var(--hint);
+      user-select: none;
     }
   </style>
 </head>
@@ -89,12 +87,11 @@
   <script>
     /* ================= CONFIG ================= */
 
-    // URL del Cloudflare Worker (la pondremos cuando lo tengas)
+    // URL del Cloudflare Worker (la que funciona en tu caso)
     const WORKER_URL = "https://restless-surf-375f.ltudela.workers.dev/pulse";
-    
-    // Token en la URL:
-    // https://tuusuario.github.io/timbre/?t=TOKEN
-    const token = new URLSearchParams(location.search).get("t");
+
+    // Clave de almacenamiento local del token
+    const TOKEN_KEY = "MP22_TOKEN";
 
     /* ========================================= */
 
@@ -105,7 +102,44 @@
       hint.textContent = txt;
     }
 
+    // ---- Token: URL (?t=...) o persistido en localStorage ----
+    const qsToken = new URLSearchParams(location.search).get("t");
+    const savedToken = localStorage.getItem(TOKEN_KEY);
+    let token = qsToken || savedToken;
+
+    // Si viene por URL, lo guardamos para que la PWA funcione sin querystring
+    if (qsToken) {
+      localStorage.setItem(TOKEN_KEY, qsToken);
+      token = qsToken;
+    }
+
+    // Indicador inicial (opcional)
+    if (!token) setHint("Falta token");
+
+    // ---- Reset token (mantener pulsado 2s sobre el texto "Listo") ----
+    let pressTimer = null;
+    hint.addEventListener("pointerdown", () => {
+      pressTimer = setTimeout(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        token = null;
+        setHint("Token borrado");
+        setTimeout(() => setHint("Falta token"), 1200);
+      }, 2000);
+    });
+    hint.addEventListener("pointerup", () => { if (pressTimer) clearTimeout(pressTimer); });
+    hint.addEventListener("pointerleave", () => { if (pressTimer) clearTimeout(pressTimer); });
+
     btn.addEventListener("click", async () => {
+
+      // Releer por si se ha guardado/borrado
+      const qs = new URLSearchParams(location.search).get("t");
+      const sv = localStorage.getItem(TOKEN_KEY);
+      token = qs || sv;
+
+      if (qs) {
+        localStorage.setItem(TOKEN_KEY, qs);
+        token = qs;
+      }
 
       if (!token) {
         setHint("Falta token");
@@ -118,22 +152,24 @@
       try {
         const r = await fetch(WORKER_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            token: token,
-            cmd: "PULSE"
-          })
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ token: token, cmd: "PULSE" })
         });
 
         if (!r.ok) throw new Error("HTTP " + r.status);
 
         setHint("OK");
       } catch (e) {
-        setHint("Error");
+        // Muestra el error real (más útil que "Error")
+        setHint(e?.message || String(e));
       } finally {
-        setTimeout(() => setHint("Listo"), 1200);
+        setTimeout(() => {
+          // Si hay token guardado, volvemos a “Listo”. Si no, “Falta token”.
+          const still = localStorage.getItem(TOKEN_KEY);
+          setHint(still ? "Listo" : "Falta token");
+        }, 1200);
+
         btn.disabled = false;
       }
     });
