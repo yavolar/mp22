@@ -91,11 +91,6 @@
       return getQsToken() || getSavedToken();
     }
 
-    // SW (para instalación PWA estable)
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(()=>{});
-    }
-
     btn.addEventListener("click", async () => {
       const token = effectiveToken();
       if (!token) { setHint("Falta token"); return; }
